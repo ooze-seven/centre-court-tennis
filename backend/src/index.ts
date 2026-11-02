@@ -44,7 +44,7 @@ const app = new Hono()
 app.use(
   '*',
   cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: (origin) => (allowedOrigins().includes(origin) ? origin : null),
     credentials: true,
   }),
 )
@@ -207,8 +207,22 @@ async function demandDesk(cookie: string | undefined) {
 function writeSession(c: { header: (name: string, value: string) => void }, id: string | null) {
   const value = id ?? ''
   const maxAge = id ? sessionMaxAge : 0
-  c.header('Set-Cookie', `${sessionCookie}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`)
+  const secure = process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production'
+  const sameSite = secure ? 'None' : 'Lax'
+  const secureFlag = secure ? '; Secure' : ''
+  c.header(
+    'Set-Cookie',
+    `${sessionCookie}=${value}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secureFlag}`,
+  )
   c.header('Cache-Control', 'no-store')
+}
+
+function allowedOrigins() {
+  const raw = process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173'
+  return raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
 }
 
 function readSession(header: string | undefined) {

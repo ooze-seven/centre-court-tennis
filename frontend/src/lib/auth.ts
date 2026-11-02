@@ -129,10 +129,15 @@ export async function requestBook() {
   return { players: payload.players, staff: payload.staff }
 }
 
+function apiUrl(path: string) {
+  const base = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? ''
+  return `${base}${path}`
+}
+
 async function send(path: string, body?: unknown) {
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       method: body === undefined ? 'GET' : 'POST',
       credentials: 'include',
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
