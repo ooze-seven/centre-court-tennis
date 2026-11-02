@@ -1,7 +1,11 @@
 import { MotionConfig, motion, useReducedMotion, useScroll } from 'framer-motion'
 import { ReactLenis } from 'lenis/react'
 import type { ReactNode } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { Account } from './components/Account.tsx'
+import { AdminDesk } from './components/AdminDesk.tsx'
 import { Anchor } from './components/Anchor.tsx'
+import { AuthProvider } from './components/AuthProvider.tsx'
 import { CourtMap } from './components/CourtMap.tsx'
 import { Desk } from './components/Desk.tsx'
 import { Footer } from './components/Footer.tsx'
@@ -11,6 +15,9 @@ import { Hero } from './components/Hero.tsx'
 import { Intro } from './components/Intro.tsx'
 import { Marquee } from './components/Marquee.tsx'
 import { Nav } from './components/Nav.tsx'
+import { RequireAuth } from './components/RequireAuth.tsx'
+import { SignIn } from './components/SignIn.tsx'
+import { SignUp } from './components/SignUp.tsx'
 import { Specs } from './components/Specs.tsx'
 
 const lenisOptions = {
@@ -22,25 +29,56 @@ const lenisOptions = {
 export default function App() {
   return (
     <MotionConfig reducedMotion="user">
-      <Smooth>
-        <Anchor className="skip" href="#page-title">
-          Skip to the court
-        </Anchor>
-        <Sideline />
-        <Intro />
-        <Nav />
-        <main id="top">
-          <Hero />
-          <Marquee />
-          <Grounds />
-          <CourtMap />
-          <Specs />
-          <Gallery />
-          <Desk />
-        </main>
-        <Footer />
-      </Smooth>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Site />} />
+            <Route path="/sign-in" element={<SignIn />} />
+            <Route path="/sign-up" element={<SignUp />} />
+            <Route
+              path="/account"
+              element={
+                <RequireAuth>
+                  <Account />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <RequireAuth role="admin">
+                  <AdminDesk />
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
     </MotionConfig>
+  )
+}
+
+function Site() {
+  return (
+    <Smooth>
+      <Anchor className="skip" href="#page-title">
+        Skip to the court
+      </Anchor>
+      <Sideline />
+      <Intro />
+      <Nav />
+      <main id="top">
+        <Hero />
+        <Marquee />
+        <Grounds />
+        <CourtMap />
+        <Specs />
+        <Gallery />
+        <Desk />
+      </main>
+      <Footer />
+    </Smooth>
   )
 }
 

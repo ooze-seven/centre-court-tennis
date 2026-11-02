@@ -4,11 +4,14 @@ import { useLenis } from 'lenis/react'
 
 const ease = [0.76, 0, 0.24, 1] as const
 
+let courtEntered = false
+
 export function Intro() {
   const reduce = useReducedMotion()
   const lenis = useLenis()
   const [active, setActive] = useState(() => {
     if (typeof window === 'undefined') return false
+    if (courtEntered) return false
     return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
   })
   const [phase, setPhase] = useState<'hold' | 'open'>('hold')
@@ -35,6 +38,7 @@ export function Intro() {
   if (reduce || !active) return null
 
   function finish() {
+    courtEntered = true
     setActive(false)
     window.setTimeout(() => document.getElementById('page-title')?.focus(), 40)
   }

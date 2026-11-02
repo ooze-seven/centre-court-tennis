@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useScroll, useMotionValueEvent } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { useLenis } from 'lenis/react'
+import { Link } from 'react-router'
+import { useAuth } from '../lib/auth.ts'
 import { Anchor } from './Anchor.tsx'
 import { Arrow } from './icons.tsx'
 import { Brand } from './Brand.tsx'
@@ -15,10 +17,12 @@ const links = [
 export function Nav() {
   const [solid, setSolid] = useState(false)
   const [open, setOpen] = useState(false)
+  const [outError, setOutError] = useState('')
   const burgerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const lenis = useLenis()
   const { scrollY, scrollYProgress } = useScroll()
+  const { user, ready, signOut } = useAuth()
 
   useMotionValueEvent(scrollY, 'change', (value) => {
     setSolid((prev) => {
@@ -27,31 +31,26 @@ export function Nav() {
     })
   })
 
-  const menuWasOpen = useRef(false)
-
   useEffect(() => {
+    if (!open) return
     const main = document.getElementById('top')
     const foot = document.querySelector('footer')
-    if (open) {
-      menuWasOpen.current = true
-      document.documentElement.classList.add('lock')
-      lenis?.stop()
-      main?.setAttribute('inert', '')
-      foot?.setAttribute('inert', '')
-      return
+    document.documentElement.classList.add('lock')
+    lenis?.stop()
+    main?.setAttribute('inert', '')
+    foot?.setAttribute('inert', '')
+    return () => {
+      document.documentElement.classList.remove('lock')
+      lenis?.start()
+      main?.removeAttribute('inert')
+      foot?.removeAttribute('inert')
     }
-    if (!menuWasOpen.current) return
-    menuWasOpen.current = false
-    document.documentElement.classList.remove('lock')
-    lenis?.start()
-    main?.removeAttribute('inert')
-    foot?.removeAttribute('inert')
   }, [open, lenis])
 
   useEffect(() => {
     if (!open) return
     const root = menuRef.current
-    const nodes = root ? [...root.querySelectorAll<HTMLElement>('a')] : []
+    const nodes = root ? [...root.querySelectorAll<HTMLElement>('a, button')] : []
     const first = nodes[0]
     const last = nodes[nodes.length - 1]
     first?.focus()
@@ -112,6 +111,20 @@ export function Nav() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  function closeMenu() {
+    setOpen(false)
+  }
+
+  async function leave() {
+    setOutError('')
+    try {
+      await signOut()
+      setOpen(false)
+    } catch (caught) {
+      setOutError(caught instanceof Error ? caught.message : 'Try again.')
+    }
+  }
+
   return (
     <header className={solid || open ? 'nav is-solid' : 'nav'} data-open={open ? 'true' : 'false'}>
       <div className={`nav__inner ${open ? 'is-open' : ''}`}>
@@ -123,10 +136,13 @@ export function Nav() {
             </Anchor>
           ))}
         </nav>
-        <Anchor href="#desk" className="btn btn--lime btn--signal nav__cta">
-          Request a court
-          <Arrow />
-        </Anchor>
+        <div className="nav__end">
+          <div className="nav__session">{ready ? <SessionLinks user={user} /> : null}</div>
+          <Anchor href="#desk" className="btn btn--lime btn--signal nav__cta">
+            Request a court
+            <Arrow />
+          </Anchor>
+        </div>
         <button
           ref={burgerRef}
           className={open ? 'nav__burger is-open' : 'nav__burger'}
@@ -160,10 +176,54 @@ export function Nav() {
                 </Anchor>
               ))}
             </nav>
-            <p className="menu__note">Where sport takes centre stage</p>
+            <div className="menu__foot">
+              <div className="menu__session">
+                {ready ? <SessionLinks user={user} menu onNavigate={closeMenu} onSignOut={() => void leave()} /> : null}
+              </div>
+              {outError ? <p className="form__alert">{outError}</p> : null}
+              <p className="menu__note">Where sport takes centre stage</p>
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
     </header>
+  )
+}
+
+function SessionLinks({
+  user,
+  menu = false,
+  onNavigate,
+  onSignOut,
+}: {
+  user: { username: string; role: 'client' | 'admin' } | null
+  menu?: boolean
+  onNavigate?: () => void
+  onSignOut?: () => void
+}) {
+  if (!user) {
+    return (
+      <Link to="/sign-in" className={menu ? 'btn btn--lime' : 'btn btn--ghost'} onClick={onNavigate}>
+        Sign in
+      </Link>
+    )
+  }
+  const accountClass = menu && user.role === 'client' ? 'btn btn--lime' : 'btn btn--ghost'
+  return (
+    <>
+      <Link to="/account" className={accountClass} onClick={onNavigate}>
+        Account
+      </Link>
+      {user.role === 'admin' ? (
+        <Link to="/admin" className={menu ? 'btn btn--lime' : 'btn btn--ghost'} onClick={onNavigate}>
+          Desk
+        </Link>
+      ) : null}
+      {menu ? (
+        <button className="btn btn--ghost" type="button" onClick={onSignOut}>
+          Sign out
+        </button>
+      ) : null}
+    </>
   )
 }

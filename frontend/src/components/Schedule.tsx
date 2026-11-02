@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { useLenis } from 'lenis/react'
+import { requestHold, requestMyHolds, useAuth } from '../lib/auth.ts'
+import { withNext } from '../lib/gate.ts'
 import { prettyDate, toISO } from '../lib/days.ts'
 import {
   addWeeks,
@@ -35,9 +38,16 @@ export function Schedule() {
   const [mobile, setMobile] = useState('')
   const [coach, setCoach] = useState(false)
   const [errors, setErrors] = useState<Errors>({})
+  const [formError, setFormError] = useState('')
+  const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const formRef = useRef<HTMLFormElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
+  function setPanel(node: HTMLElement | null) {
+    panelRef.current = node
+  }
+  const nameSeeded = useRef(false)
   const lenis = useLenis()
+  const { user, ready } = useAuth()
   const days = weekDates(week)
   const atThisWeek = toISO(week) <= toISO(thisWeek)
 
@@ -62,8 +72,37 @@ export function Schedule() {
   }, [now])
 
   useEffect(() => {
-    if (!picked) return
-    const node = formRef.current
+    if (!user) {
+      setHeld({})
+      return
+    }
+    let cancel = false
+    requestMyHolds()
+      .then((holds) => {
+        if (cancel) return
+        setHeld((current) => {
+          const next = { ...current }
+          for (const hold of holds) next[slotKey(hold.date, hold.hour)] = true
+          return next
+        })
+      })
+      .catch(() => undefined)
+    return () => {
+      cancel = true
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (nameSeeded.current || !user) return
+    nameSeeded.current = true
+    const fullName = `${user.firstName} ${user.lastName}`
+    setName((current) => (current.trim() ? current : fullName))
+    setMobile((current) => (current.trim() ? current : user.phone))
+  }, [user])
+
+  useEffect(() => {
+    if (!picked || !ready) return
+    const node = panelRef.current
     if (!node) return
     const top = node.getBoundingClientRect().top
     if (top >= 108 && top <= window.innerHeight - 180) return
@@ -72,32 +111,50 @@ export function Schedule() {
       return
     }
     window.scrollBy({ top: top - 108, behavior: 'smooth' })
-  }, [picked, lenis])
+  }, [picked, lenis, ready, user])
 
   function choose(slot: Slot) {
     setPicked(slot)
     setDone(null)
     setErrors({})
+    setFormError('')
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!picked) return
+    if (!picked || !user || busy) return
     const next: Errors = {}
     if (name.trim().length < 2) next.name = 'Add your name.'
     const digits = mobile.replace(/\D/g, '')
     if (digits.length < 10 || digits.length > 13) next.mobile = 'Check the mobile number.'
     setErrors(next)
+    setFormError('')
     if (next.name || next.mobile) {
       document.getElementById(next.name ? 'hold-name' : 'hold-mobile')?.focus()
       return
     }
-    setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
-    setDone({ ...picked, coach })
-    setPicked(null)
-    setName('')
-    setMobile('')
-    setCoach(false)
+    setBusy(true)
+    try {
+      const result = await requestHold({ date: picked.iso, hour: picked.hour, coach })
+      if (!result.ok) {
+        setFormError(result.error)
+        if (result.error === 'That hour is already in your request.') {
+          setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
+          setPicked(null)
+        }
+        return
+      }
+      setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
+      setDone({ ...picked, coach })
+      setPicked(null)
+      setName(`${user.firstName} ${user.lastName}`)
+      setMobile(user.phone)
+      setCoach(false)
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -173,15 +230,14 @@ export function Schedule() {
           </button>
         </div>
       ) : null}
-      {picked ? (
-        <form ref={formRef} className="form board__request" noValidate onSubmit={onSubmit}>
+      {picked && user ? (
+        <form ref={setPanel} className="form board__request" noValidate onSubmit={onSubmit}>
           <p className="eyebrow">{prettyDate(picked.iso)}</p>
-          <h3>
-            {hourRange(picked.hour)}
-          </h3>
+          <h3>{hourRange(picked.hour)}</h3>
           <p className="dek">
             {rateName(picked.hour)} · {pesos(picked.hour)} pesos an hour
           </p>
+          <p className="dek">The desk holds this under the name on your gate.</p>
           <div className="field-row">
             <label className="field">
               <span>Full name</span>
@@ -190,6 +246,7 @@ export function Schedule() {
                 name="name"
                 autoComplete="name"
                 value={name}
+                readOnly
                 aria-invalid={Boolean(errors.name)}
                 onChange={(event) => setName(event.target.value)}
               />
@@ -204,6 +261,7 @@ export function Schedule() {
                 inputMode="tel"
                 autoComplete="tel"
                 value={mobile}
+                readOnly
                 aria-invalid={Boolean(errors.mobile)}
                 onChange={(event) => setMobile(event.target.value)}
               />
@@ -221,11 +279,35 @@ export function Schedule() {
               </button>
             </div>
           </div>
-          <button className="btn btn--lime" type="submit">
-            Request this hour
+          {formError ? (
+            <p className="form__alert" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          <button className="btn btn--lime" type="submit" disabled={busy}>
+            {busy ? 'Sending…' : 'Request this hour'}
             <Arrow />
           </button>
         </form>
+      ) : null}
+      {picked && ready && !user ? (
+        <div className="board__request" ref={setPanel} aria-live="polite">
+          <p className="eyebrow">{prettyDate(picked.iso)}</p>
+          <h3>{hourRange(picked.hour)}</h3>
+          <p className="dek">
+            {rateName(picked.hour)} · {pesos(picked.hour)} pesos an hour
+          </p>
+          <p className="dek">Sign in with your player name before the desk can hold this hour.</p>
+          <div className="gate__actions">
+            <Link className="btn btn--lime" to={withNext('/sign-in', '/#desk')}>
+              Sign in
+              <Arrow />
+            </Link>
+            <Link className="btn btn--ghost" to={withNext('/sign-up', '/#desk')}>
+              Take a player name
+            </Link>
+          </div>
+        </div>
       ) : null}
     </div>
   )

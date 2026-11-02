@@ -1,13 +1,24 @@
+import { Link } from 'react-router'
 import { Anchor } from './Anchor.tsx'
 
-export function Brand({ variant = 'nav' }: { variant?: 'nav' | 'stack' }) {
-  const stacked = variant === 'stack'
-  return stacked ? (
-    <div className="brand brand--stack">
-      <Mark />
-      <Type lines />
-    </div>
-  ) : (
+export function Brand({ variant = 'nav', home = false }: { variant?: 'nav' | 'stack'; home?: boolean }) {
+  if (variant === 'stack') {
+    return (
+      <div className="brand brand--stack">
+        <Mark />
+        <Type lines />
+      </div>
+    )
+  }
+  if (home) {
+    return (
+      <Link to="/" className="brand">
+        <Mark />
+        <Type />
+      </Link>
+    )
+  }
+  return (
     <Anchor href="#top" className="brand">
       <Mark />
       <Type />
