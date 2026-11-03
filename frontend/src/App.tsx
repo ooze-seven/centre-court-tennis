@@ -3,7 +3,7 @@ import { ReactLenis } from 'lenis/react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { Account } from './components/Account.tsx'
-import { AdminDesk } from './components/AdminDesk.tsx'
+import { AdminDesk, AdminHours, AdminLogins, AdminOverview, AdminPlayers } from './components/AdminDesk.tsx'
 import { Anchor } from './components/Anchor.tsx'
 import { AuthProvider } from './components/AuthProvider.tsx'
 import { CourtMap } from './components/CourtMap.tsx'
@@ -50,7 +50,12 @@ export default function App() {
                   <AdminDesk />
                 </RequireAuth>
               }
-            />
+            >
+              <Route index element={<AdminOverview />} />
+              <Route path="hours" element={<AdminHours />} />
+              <Route path="players" element={<AdminPlayers />} />
+              <Route path="desk" element={<AdminLogins />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>

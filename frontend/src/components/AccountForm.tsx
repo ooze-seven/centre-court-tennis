@@ -13,6 +13,7 @@ export function AccountForm({
   errors,
   formError,
   notice,
+  labelledBy = 'gate-title',
   onSave,
 }: {
   idPrefix: string
@@ -23,6 +24,7 @@ export function AccountForm({
   errors: AccountErrors
   formError: string
   notice?: string
+  labelledBy?: string
   onSave: (draft: AccountDraft) => void
 }) {
   const [draft, setDraft] = useState<AccountDraft>(emptyAccount)
@@ -44,7 +46,7 @@ export function AccountForm({
   }
 
   return (
-    <form className="form" autoComplete={staff ? 'off' : 'on'} noValidate aria-labelledby="gate-title" onSubmit={onSubmit}>
+    <form className="form" autoComplete={staff ? 'off' : 'on'} noValidate aria-labelledby={labelledBy} onSubmit={onSubmit}>
       <div className="field-row">
         <Field
           id={`${idPrefix}-firstName`}
