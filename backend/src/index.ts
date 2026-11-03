@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server'
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
@@ -14,6 +14,7 @@ import {
   userForSession,
   warmAccounts,
 } from './accounts.js'
+import { bookReady, rest } from './db.js'
 import { loadEnv } from './env.js'
 import { allHolds, createHold, holdByPass, holdsFor } from './holds.js'
 
@@ -98,7 +99,7 @@ app.get('/api/admin/accounts', async (c) => {
   const gate = await demandDesk(c.req.header('cookie'))
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   c.header('Cache-Control', 'no-store')
-  return c.json({ ok: true, ...listAccounts() })
+  return c.json({ ok: true, ...(await listAccounts()) })
 })
 
 app.post('/api/admin/staff', async (c) => {
@@ -185,9 +186,22 @@ app.post('/api/enquiries', async (c) => {
     createdAt: new Date().toISOString(),
   }
 
-  const rows = readAll()
-  rows.push(enquiry)
-  writeAll(rows)
+  if (!(await bookReady())) return c.json({ ok: false, error: 'The book is not open yet.' }, 503)
+  await rest('enquiries', {
+    method: 'POST',
+    headers: { prefer: 'return=minimal' },
+    body: JSON.stringify({
+      id: enquiry.id,
+      name: enquiry.name,
+      email: enquiry.email,
+      date: enquiry.date,
+      time: enquiry.time,
+      format: enquiry.format,
+      note: enquiry.note,
+      user_id: enquiry.userId,
+      created_at: enquiry.createdAt,
+    }),
+  })
   console.log(`Court request ${enquiry.id} · ${enquiry.date} ${enquiry.time} ${enquiry.format}`)
   return c.json({ ok: true, id: enquiry.id }, 201)
 })
@@ -198,6 +212,7 @@ const port = Number(process.env.PORT ?? 8787)
 
 await warmAccounts()
 await ensureDesk()
+await adoptEnquiries()
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`API http://localhost:${info.port}`)
@@ -314,19 +329,33 @@ function clientIp(header: string | undefined) {
   return header?.split(',')[0]?.trim() || 'local'
 }
 
-function readAll(): Enquiry[] {
-  if (!existsSync(dataFile)) return []
+async function adoptEnquiries() {
+  if (!(await bookReady()) || !existsSync(dataFile)) return
+  const present = await rest<Array<{ id: string }>>('enquiries?select=id&limit=1')
+  if (present.length > 0) return
   try {
     const parsed: unknown = JSON.parse(readFileSync(dataFile, 'utf8'))
-    return Array.isArray(parsed) ? (parsed as Enquiry[]) : []
+    if (!Array.isArray(parsed) || parsed.length === 0) return
+    await rest('enquiries', {
+      method: 'POST',
+      headers: { prefer: 'return=minimal' },
+      body: JSON.stringify(
+        (parsed as Enquiry[]).map((row) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          date: row.date,
+          time: row.time,
+          format: row.format,
+          note: row.note,
+          user_id: row.userId,
+          created_at: row.createdAt,
+        })),
+      ),
+    })
   } catch {
-    return []
+    return
   }
-}
-
-function writeAll(rows: Enquiry[]) {
-  mkdirSync(dirname(dataFile), { recursive: true })
-  writeFileSync(dataFile, JSON.stringify(rows, null, 2))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
