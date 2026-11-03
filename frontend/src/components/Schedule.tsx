@@ -19,7 +19,7 @@ import {
   weekLabel,
 } from '../lib/schedule.ts'
 import { Arrow } from './icons.tsx'
-import { PassMark } from './PassMark.tsx'
+import { PassCard } from './PassCard.tsx'
 
 type Slot = { iso: string; hour: number }
 
@@ -77,6 +77,7 @@ export function Schedule() {
     if (!user) {
       setHeld({})
       setPasses({})
+      setDone(null)
       return
     }
     let cancel = false
@@ -237,21 +238,15 @@ export function Schedule() {
           ))}
         </div>
       </div>
-      {done ? (
-        <div className="board__request" aria-live="polite">
-          <p className="eyebrow">Request received</p>
-          <h3>{prettyDate(done.iso)}</h3>
-          <p className="dek">
-            {hourRange(done.hour)} · {rateName(done.hour)} · {pesos(done.hour)} pesos
-            {done.coach ? ' · Coach' : ''}
-          </p>
-          <p className="dek">The desk will confirm before anyone walks on. Arrive 10 minutes early.</p>
-          <PassMark pass={done.pass} />
-          <button className="btn btn--lime" type="button" onClick={() => setDone(null)}>
-            Hold another hour
-            <Arrow />
-          </button>
-        </div>
+      {done && user ? (
+        <PassCard
+          pass={done.pass}
+          name={`${user.firstName} ${user.lastName}`}
+          iso={done.iso}
+          hour={done.hour}
+          coach={done.coach}
+          onClose={() => setDone(null)}
+        />
       ) : null}
       {picked && user ? (
         <form ref={setPanel} className="form board__request" noValidate onSubmit={onSubmit}>

@@ -3069,32 +3069,179 @@ html::-webkit-scrollbar-corner,
   }
 }
 
-.pass {
-  display: grid;
-  justify-items: start;
-  gap: 0.75rem;
-  margin: 0.2rem 0;
+.pass-card {
+  margin: auto;
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-height: calc(100svh - 1.25rem);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--lime);
+  background: var(--ink);
+  color: var(--cream);
 }
 
-.pass img {
-  width: min(220px, 100%);
+.pass-card::backdrop {
+  background: rgba(6, 14, 10, 0.78);
+}
+
+.pass-card__apron {
+  height: 0.55rem;
+  background: var(--lime);
+}
+
+.pass-card__body {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.pass-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pass-card__top img {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.pass-card__top .eyebrow {
+  margin-bottom: 0.2rem;
+}
+
+.pass-card__brand {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-stretch: 118%;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.pass-card h2 {
+  font-size: clamp(1.6rem, 5.4vw, 2.2rem);
+  color: var(--cream);
+}
+
+.pass-card h2:focus {
+  outline: none;
+}
+
+.pass-card__qr {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  background: var(--cream);
+  color: var(--ink);
+  padding: 0.85rem 0.85rem 0.7rem;
+}
+
+.pass-card__qr img {
+  width: min(200px, 100%);
   height: auto;
   background: var(--cream);
-  padding: 0.65rem;
 }
 
-.pass figcaption {
-  max-width: 36rem;
-  color: var(--cream-dim);
+.pass-card__qr figcaption {
+  width: 100%;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
-.pass__code {
+.pass-card__code {
   display: block;
   margin-top: 0.35rem;
-  color: var(--lime);
-  letter-spacing: 0.16em;
+  color: var(--ink);
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.pass-card__facts {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.pass-card__facts div {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: baseline;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(246, 247, 242, 0.28);
+}
+
+.pass-card__facts dt {
+  margin: 0;
+  color: var(--lime);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.pass-card__facts dd {
+  margin: 0;
+}
+
+.pass-card .dek {
+  color: var(--cream-dim);
   font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.pass-card .btn {
+  width: 100%;
+}
+
+@media (max-height: 760px) {
+  .pass-card__body {
+    gap: 0.45rem;
+    padding: 0.6rem 0.9rem 0.75rem;
+  }
+
+  .pass-card h2 {
+    font-size: 1.45rem;
+  }
+
+  .pass-card__qr {
+    gap: 0.4rem;
+    padding: 0.55rem 0.7rem 0.5rem;
+  }
+
+  .pass-card__qr img {
+    width: min(168px, 100%);
+  }
+
+  .pass-card__qr figcaption {
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+
+  .pass-card__facts {
+    gap: 0.28rem;
+  }
+
+  .pass-card__facts div {
+    padding-top: 0.28rem;
+  }
+
+  .pass-card .dek {
+    font-size: 0.8rem;
+    line-height: 1.3;
+  }
+
+  .pass-card .btn {
+    min-height: 42px;
+    padding: 0.55rem 0.9rem;
+  }
 }
 
 .admin__scan {
