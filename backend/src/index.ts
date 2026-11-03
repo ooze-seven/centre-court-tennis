@@ -237,9 +237,10 @@ function writeSession(c: { header: (name: string, value: string) => void }, id: 
   const secure = process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production'
   const sameSite = secure ? 'None' : 'Lax'
   const secureFlag = secure ? '; Secure' : ''
+  const partitioned = secure ? '; Partitioned' : ''
   c.header(
     'Set-Cookie',
-    `${sessionCookie}=${value}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secureFlag}`,
+    `${sessionCookie}=${value}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secureFlag}${partitioned}`,
   )
   c.header('Cache-Control', 'no-store')
 }
