@@ -19,10 +19,11 @@ import {
   weekLabel,
 } from '../lib/schedule.ts'
 import { Arrow } from './icons.tsx'
+import { PassMark } from './PassMark.tsx'
 
 type Slot = { iso: string; hour: number }
 
-type HeldRequest = Slot & { coach: boolean }
+type HeldRequest = Slot & { coach: boolean; pass: string }
 
 type Errors = Partial<Record<'name' | 'mobile', string>>
 
@@ -33,6 +34,7 @@ export function Schedule() {
   const [week, setWeek] = useState(thisWeek)
   const [picked, setPicked] = useState<Slot | null>(null)
   const [held, setHeld] = useState<Record<string, true>>({})
+  const [passes, setPasses] = useState<Record<string, HeldRequest>>({})
   const [done, setDone] = useState<HeldRequest | null>(null)
   const [name, setName] = useState('')
   const [mobile, setMobile] = useState('')
@@ -74,17 +76,22 @@ export function Schedule() {
   useEffect(() => {
     if (!user) {
       setHeld({})
+      setPasses({})
       return
     }
     let cancel = false
     requestMyHolds()
       .then((holds) => {
         if (cancel) return
-        setHeld((current) => {
-          const next = { ...current }
-          for (const hold of holds) next[slotKey(hold.date, hold.hour)] = true
-          return next
-        })
+        const nextPasses: Record<string, HeldRequest> = {}
+        const marked: Record<string, true> = {}
+        for (const hold of holds) {
+          const key = slotKey(hold.date, hold.hour)
+          marked[key] = true
+          nextPasses[key] = { iso: hold.date, hour: hold.hour, coach: hold.coach, pass: hold.pass }
+        }
+        setHeld((current) => ({ ...current, ...marked }))
+        setPasses(nextPasses)
       })
       .catch(() => undefined)
     return () => {
@@ -114,6 +121,16 @@ export function Schedule() {
   }, [picked, lenis, ready, user])
 
   function choose(slot: Slot) {
+    const key = slotKey(slot.iso, slot.hour)
+    const pass = passes[key]
+    if (pass) {
+      setDone(pass)
+      setPicked(null)
+      setErrors({})
+      setFormError('')
+      return
+    }
+    if (held[key]) return
     setPicked(slot)
     setDone(null)
     setErrors({})
@@ -139,13 +156,18 @@ export function Schedule() {
       if (!result.ok) {
         setFormError(result.error)
         if (result.error === 'That hour is already in your request.') {
-          setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
+          const key = slotKey(picked.iso, picked.hour)
+          setHeld((current) => ({ ...current, [key]: true }))
+          const existing = passes[key]
+          if (existing) setDone(existing)
           setPicked(null)
         }
         return
       }
+      const saved = { iso: picked.iso, hour: picked.hour, coach, pass: result.hold.pass }
       setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
-      setDone({ ...picked, coach })
+      setPasses((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: saved }))
+      setDone(saved)
       setPicked(null)
       setName(`${user.firstName} ${user.lastName}`)
       setMobile(user.phone)
@@ -224,6 +246,7 @@ export function Schedule() {
             {done.coach ? ' · Coach' : ''}
           </p>
           <p className="dek">The desk will confirm before anyone walks on. Arrive 10 minutes early.</p>
+          <PassMark pass={done.pass} />
           <button className="btn btn--lime" type="button" onClick={() => setDone(null)}>
             Hold another hour
             <Arrow />
@@ -343,7 +366,7 @@ function HourRow({
         const selected = picked?.iso === iso && picked.hour === hour
         const day = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
         const label = taken
-          ? `Held, ${day}, ${hourRange(hour)}`
+          ? `Show the pass, ${day}, ${hourRange(hour)}`
           : shut
             ? `Passed, ${day}, ${hourRange(hour)}`
             : `Request ${day}, ${hourRange(hour)}, ${pesos(hour)} pesos`
@@ -359,7 +382,7 @@ function HourRow({
             ]
               .filter(Boolean)
               .join(' ')}
-            disabled={shut || taken}
+            disabled={shut && !taken}
             aria-pressed={selected}
             aria-label={label}
             onClick={() => onChoose({ iso, hour })}

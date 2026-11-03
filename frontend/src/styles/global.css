@@ -3062,3 +3062,31 @@ html::-webkit-scrollbar-corner,
     transition: none;
   }
 }
+
+.pass {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  margin: 0.2rem 0;
+}
+
+.pass img {
+  width: min(220px, 100%);
+  height: auto;
+  background: var(--cream);
+  padding: 0.65rem;
+}
+
+.pass figcaption {
+  max-width: 36rem;
+  color: var(--cream-dim);
+}
+
+.pass__code {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--lime);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.92rem;
+}

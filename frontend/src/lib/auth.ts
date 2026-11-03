@@ -75,9 +75,23 @@ export type CourtHold = {
   date: string
   hour: number
   coach: boolean
+  pass: string
 }
 
-export type DeskHold = CourtHold & {
+export type PassGate = 'now' | 'early' | 'late'
+
+export type PassLook = {
+  gate: PassGate
+  firstName: string
+  lastName: string
+  username: string
+  phone: string
+  date: string
+  hour: number
+  coach: boolean
+}
+
+export type DeskHold = Omit<CourtHold, 'pass'> & {
   userId: string
   firstName: string
   lastName: string
@@ -108,6 +122,15 @@ export async function requestMyHolds() {
     throw new Error(error)
   }
   return payload.holds
+}
+
+export async function requestPass(code: string) {
+  const payload = await send(`/api/admin/passes/${encodeURIComponent(code)}`)
+  if (isRecord(payload) && payload.ok === true && isPassLook(payload)) return payload
+  if (isRecord(payload) && payload.ok === false) {
+    return { ok: false as const, error: typeof payload.error === 'string' ? payload.error : 'That pass is not on the book.' }
+  }
+  throw new Error('The gate did not answer. Try again.')
 }
 
 export async function requestDeskHolds() {
@@ -182,6 +205,20 @@ function isCourtHold(value: unknown): value is CourtHold {
   return (
     isRecord(value) &&
     typeof value.id === 'string' &&
+    typeof value.date === 'string' &&
+    typeof value.hour === 'number' &&
+    typeof value.coach === 'boolean' &&
+    typeof value.pass === 'string'
+  )
+}
+
+function isPassLook(value: Record<string, unknown>): value is PassLook & { ok: true } {
+  return (
+    (value.gate === 'now' || value.gate === 'early' || value.gate === 'late') &&
+    typeof value.firstName === 'string' &&
+    typeof value.lastName === 'string' &&
+    typeof value.username === 'string' &&
+    typeof value.phone === 'string' &&
     typeof value.date === 'string' &&
     typeof value.hour === 'number' &&
     typeof value.coach === 'boolean'
