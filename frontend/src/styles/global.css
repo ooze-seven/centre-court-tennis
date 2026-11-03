@@ -53,6 +53,12 @@ body::before {
   mix-blend-mode: overlay;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  body::before {
+    content: none;
+  }
+}
+
 img {
   max-width: 100%;
   display: block;
