@@ -1,5 +1,5 @@
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion'
-import { useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 export function Still({
   src,
@@ -28,11 +28,12 @@ export function Still({
 }) {
   const ref = useRef<HTMLElement>(null)
   const reduce = useReducedMotion()
+  const coarse = useCoarsePointer()
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ['start end', 'end start'],
   })
-  const y = useTransform(scrollYProgress, [0, 1], reduce ? ['0%', '0%'] : ['-6%', '6%'])
+  const y = useTransform(scrollYProgress, [0, 1], reduce || coarse ? ['0%', '0%'] : ['-6%', '6%'])
 
   return (
     <figure ref={ref} className={`still ${className}`}>
@@ -62,4 +63,19 @@ export function Still({
       ) : null}
     </figure>
   )
+}
+
+function useCoarsePointer() {
+  const [coarse, setCoarse] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(hover: none) and (pointer: coarse)').matches,
+  )
+
+  useEffect(() => {
+    const query = window.matchMedia('(hover: none) and (pointer: coarse)')
+    const apply = () => setCoarse((current) => (current === query.matches ? current : query.matches))
+    query.addEventListener('change', apply)
+    return () => query.removeEventListener('change', apply)
+  }, [])
+
+  return coarse
 }
