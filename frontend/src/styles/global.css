@@ -3090,3 +3090,44 @@ html::-webkit-scrollbar-corner,
   text-transform: uppercase;
   font-size: 0.92rem;
 }
+
+.admin__scan {
+  max-width: 28rem;
+  margin-bottom: 1.4rem;
+}
+
+.admin__scan video {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: #000;
+}
+
+.admin__verdict {
+  display: grid;
+  gap: 0.85rem;
+  max-width: 40rem;
+  padding: 1.1rem 1.15rem 0.4rem;
+  border: 1px solid var(--line);
+}
+
+.admin__verdict[data-gate='now'] {
+  background: var(--lime);
+  color: var(--ink);
+  border-color: var(--lime);
+}
+
+.admin__verdict[data-gate='now'] .eyebrow,
+.admin__verdict[data-gate='now'] .facts dt,
+.admin__verdict[data-gate='now'] h2 {
+  color: var(--ink);
+}
+
+.admin__verdict[data-gate='now'] .facts div,
+.admin__verdict[data-gate='now'] .facts div:last-child {
+  border-color: rgba(18, 40, 28, 0.28);
+}
+
+.admin__verdict h2 {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}

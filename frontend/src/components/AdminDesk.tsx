@@ -105,6 +105,7 @@ export function AdminDesk() {
   const items: { to: string; label: string; end?: boolean; count?: number }[] = [
     { to: '/admin', label: 'Overview', end: true },
     { to: '/admin/hours', label: 'Hours', count: holds?.length },
+    { to: '/admin/check', label: 'Scan' },
     { to: '/admin/players', label: 'Players', count: book?.players.length },
     { to: '/admin/desk', label: 'Desk logins', count: book?.staff.length },
   ]
@@ -246,6 +247,11 @@ export function AdminHours() {
         title="Hours."
         dek="A request is not a confirmed booking. The desk still confirms the hour."
       />
+      <p>
+        <Link className="admin__more" to="/admin/check">
+          Scan a pass
+        </Link>
+      </p>
       {holds === null ? (
         <p className="dek">Opening the hours…</p>
       ) : (

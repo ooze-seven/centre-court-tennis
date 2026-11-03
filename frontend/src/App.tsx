@@ -3,6 +3,7 @@ import { ReactLenis } from 'lenis/react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { Account } from './components/Account.tsx'
+import { AdminCheck } from './components/AdminCheck.tsx'
 import { AdminDesk, AdminHours, AdminLogins, AdminOverview, AdminPlayers } from './components/AdminDesk.tsx'
 import { Anchor } from './components/Anchor.tsx'
 import { AuthProvider } from './components/AuthProvider.tsx'
@@ -53,6 +54,8 @@ export default function App() {
             >
               <Route index element={<AdminOverview />} />
               <Route path="hours" element={<AdminHours />} />
+              <Route path="check/:code" element={<AdminCheck />} />
+              <Route path="check" element={<AdminCheck />} />
               <Route path="players" element={<AdminPlayers />} />
               <Route path="desk" element={<AdminLogins />} />
             </Route>
