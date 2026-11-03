@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PublicUser } from './accounts.js'
 
+const passAlphabet = 'abcdefghjkmnpqrstuvwxyz23456789'
+
 export type StoredHold = {
   id: string
   userId: string
@@ -14,11 +16,26 @@ export type StoredHold = {
   date: string
   hour: number
   coach: boolean
+  pass?: string
   createdAt: string
 }
 
 export type PlayerHold = {
   id: string
+  date: string
+  hour: number
+  coach: boolean
+  pass: string
+}
+
+export type PassGate = 'now' | 'early' | 'late'
+
+export type PassLook = {
+  gate: PassGate
+  firstName: string
+  lastName: string
+  username: string
+  phone: string
   date: string
   hour: number
   coach: boolean
@@ -31,11 +48,12 @@ export function createHold(user: PublicUser, input: unknown) {
   return lock(() => {
     const parsed = parseHold(input)
     if (!parsed.ok) return parsed
-    const rows = readHolds()
+    const rows = withPasses(readHolds())
     const same = rows.some(
       (hold) => hold.userId === user.id && hold.date === parsed.date && hold.hour === parsed.hour,
     )
     if (same) return { ok: false as const, error: 'That hour is already in your request.' }
+    const used = new Set(rows.map((hold) => hold.pass).filter((pass): pass is string => Boolean(pass)))
     const hold: StoredHold = {
       id: crypto.randomUUID(),
       userId: user.id,
@@ -47,6 +65,7 @@ export function createHold(user: PublicUser, input: unknown) {
       date: parsed.date,
       hour: parsed.hour,
       coach: parsed.coach,
+      pass: mintPass(used),
       createdAt: new Date().toISOString(),
     }
     rows.push(hold)
@@ -56,15 +75,34 @@ export function createHold(user: PublicUser, input: unknown) {
 }
 
 export function holdsFor(userId: string) {
-  return lock(() => readHolds().filter((hold) => hold.userId === userId).map(toPlayer))
+  return lock(() => withPasses(readHolds()).filter((hold) => hold.userId === userId).map(toPlayer))
 }
 
 export function allHolds() {
   return lock(() =>
-    readHolds()
+    withPasses(readHolds())
       .slice()
       .sort((a, b) => a.date.localeCompare(b.date) || a.hour - b.hour || a.createdAt.localeCompare(b.createdAt)),
   )
+}
+
+export function holdByPass(code: string) {
+  return lock((): PassLook | null => {
+    const pass = code.trim().toLowerCase()
+    if (!isPass(pass)) return null
+    const hold = withPasses(readHolds()).find((item) => item.pass === pass)
+    if (!hold?.pass) return null
+    return {
+      gate: passGate(hold),
+      firstName: hold.firstName,
+      lastName: hold.lastName,
+      username: hold.username,
+      phone: hold.phone,
+      date: hold.date,
+      hour: hold.hour,
+      coach: hold.coach,
+    }
+  })
 }
 
 function parseHold(input: unknown): { ok: true; date: string; hour: number; coach: boolean } | { ok: false; error: string } {
@@ -100,7 +138,43 @@ function openDay(value: string) {
 }
 
 function toPlayer(hold: StoredHold): PlayerHold {
-  return { id: hold.id, date: hold.date, hour: hold.hour, coach: hold.coach }
+  return { id: hold.id, date: hold.date, hour: hold.hour, coach: hold.coach, pass: hold.pass ?? '' }
+}
+
+function withPasses(rows: StoredHold[]) {
+  const used = new Set(rows.map((hold) => hold.pass).filter((pass): pass is string => Boolean(pass)))
+  let changed = false
+  for (const hold of rows) {
+    if (hold.pass && isPass(hold.pass)) continue
+    hold.pass = mintPass(used)
+    used.add(hold.pass)
+    changed = true
+  }
+  if (changed) writeHolds(rows)
+  return rows
+}
+
+function mintPass(used: Set<string>) {
+  const bytes = new Uint8Array(10)
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    crypto.getRandomValues(bytes)
+    const pass = [...bytes].map((byte) => passAlphabet[byte % passAlphabet.length]).join('')
+    if (!used.has(pass)) return pass
+  }
+  throw new Error('Could not mint a pass')
+}
+
+function isPass(value: string) {
+  return new RegExp(`^[${passAlphabet}]{10}$`).test(value)
+}
+
+function passGate(hold: StoredHold): PassGate {
+  const [year, month, day] = hold.date.split('-').map(Number)
+  const start = new Date(year, month - 1, day, hold.hour).getTime()
+  const now = Date.now()
+  if (now < start - 10 * 60 * 1000) return 'early'
+  if (now >= start + 60 * 60 * 1000) return 'late'
+  return 'now'
 }
 
 function readHolds(): StoredHold[] {

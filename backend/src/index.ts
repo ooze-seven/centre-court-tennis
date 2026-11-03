@@ -15,7 +15,7 @@ import {
   warmAccounts,
 } from './accounts.js'
 import { loadEnv } from './env.js'
-import { allHolds, createHold, holdsFor } from './holds.js'
+import { allHolds, createHold, holdByPass, holdsFor } from './holds.js'
 
 const times = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00']
 const formats = ['singles', 'doubles'] as const
@@ -134,11 +134,23 @@ app.get('/api/holds', async (c) => {
   return c.json({ ok: true, holds: await holdsFor(gate.user.id) })
 })
 
+app.get('/api/admin/passes/:code', async (c) => {
+  const gate = await demandDesk(c.req.header('cookie'))
+  if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
+  const ip = clientIp(c.req.header('x-forwarded-for'))
+  if (limited(ip, 'pass', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
+  c.header('Cache-Control', 'no-store')
+  const found = await holdByPass(c.req.param('code'))
+  if (!found) return c.json({ ok: false, error: 'That pass is not on the book.' }, 404)
+  return c.json({ ok: true, ...found })
+})
+
 app.get('/api/admin/holds', async (c) => {
   const gate = await demandDesk(c.req.header('cookie'))
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   c.header('Cache-Control', 'no-store')
-  return c.json({ ok: true, holds: await allHolds() })
+  const holds = (await allHolds()).map(({ pass: _pass, ...hold }) => hold)
+  return c.json({ ok: true, holds })
 })
 
 app.post('/api/enquiries', async (c) => {
