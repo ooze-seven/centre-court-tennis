@@ -33,7 +33,7 @@ The schedule is a week of one-hour blocks, the same way the court is actually bo
 | Daytime, 06:00–16:00 | 600 pesos an hour |
 | Evening and lights | 700 pesos an hour |
 
-An open hour takes a name, a mobile number, and whether a coach is needed. Arrive 10 minutes early. A held hour stays held in the browser. The desk API does not store these yet.
+An open hour takes a name, a mobile number, and whether a coach is needed. Arrive 10 minutes early. The desk stores each hold, and the board shows that hour as held.
 
 ## Run it
 
@@ -50,4 +50,4 @@ The site is [http://localhost:5173](http://localhost:5173). The desk API is [htt
 
 ## In the tree
 
-`frontend` is Vite, React, and TypeScript. `backend` is a small Hono server: health, the court hours, and a request the desk can keep. Enquiry records stay in `backend/data`, which is not in this repo.
+`frontend` is Vite, React, and TypeScript. `backend` is a small Hono server for the gate, the board, and the desk. Players, sessions, and held hours are in the Supabase book. `backend/data` is an old file copy and is not in this repo.
