@@ -96,19 +96,30 @@ export function closeSession(id: string) {
   })
 }
 
-export function userForSession(id: string | null) {
-  if (!id || !/^[a-f0-9]{64}$/.test(id)) return Promise.resolve(null)
+export type SessionLook =
+  | { kind: 'user'; user: PublicUser }
+  | { kind: 'none' }
+  | { kind: 'closed' }
+
+export function accessFor(look: SessionLook) {
+  if (look.kind === 'closed') return { ok: false as const, status: 503 as const, error: 'The book is not open yet.' }
+  if (look.kind === 'none') return { ok: false as const, status: 401 as const, error: 'Sign in first.' }
+  return { ok: true as const, user: look.user }
+}
+
+export function userForSession(id: string | null): Promise<SessionLook> {
+  if (!id || !/^[a-f0-9]{64}$/.test(id)) return Promise.resolve({ kind: 'none' })
   return lock(async () => {
-    if (!(await bookReady())) return null
+    if (!(await bookReady())) return { kind: 'closed' }
     const rows = await rest<SessionRow[]>(`sessions?id=eq.${encodeURIComponent(id)}&select=id,user_id,expires_at&limit=1`)
     const session = rows[0]
-    if (!session) return null
+    if (!session) return { kind: 'none' }
     if (Date.parse(session.expires_at) <= Date.now()) {
       await rest(`sessions?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } })
-      return null
+      return { kind: 'none' }
     }
     const user = await findUser(`id=eq.${session.user_id}`)
-    return user ? toPublic(user) : null
+    return user ? { kind: 'user', user: toPublic(user) } : { kind: 'none' }
   })
 }
 

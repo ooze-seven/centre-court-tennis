@@ -40,6 +40,15 @@ create unique index if not exists holds_pass on public.holds (pass);
 
 create unique index if not exists holds_one_hour on public.holds (date, hour);
 
+create table if not exists public.rate_hits (
+  id uuid primary key,
+  bucket text not null,
+  ip text not null,
+  at timestamptz not null
+);
+
+create index if not exists rate_hits_lookup on public.rate_hits (bucket, ip, at);
+
 create table if not exists public.enquiries (
   id uuid primary key,
   name text not null,
@@ -56,12 +65,14 @@ alter table public.users enable row level security;
 alter table public.sessions enable row level security;
 alter table public.holds enable row level security;
 alter table public.enquiries enable row level security;
+alter table public.rate_hits enable row level security;
 
 revoke all on table public.users from anon, authenticated;
 revoke all on table public.sessions from anon, authenticated;
 revoke all on table public.holds from anon, authenticated;
 revoke all on table public.enquiries from anon, authenticated;
+revoke all on table public.rate_hits from anon, authenticated;
 
-grant all on table public.users, public.sessions, public.holds, public.enquiries to service_role;
+grant all on table public.users, public.sessions, public.holds, public.enquiries, public.rate_hits to service_role;
 
 notify pgrst, 'reload schema';

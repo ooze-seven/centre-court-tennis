@@ -17,13 +17,10 @@ import {
 import { bookReady, rest } from './db.js'
 import { loadEnv } from './env.js'
 import { allHolds, createHold, holdByPass, holdsFor, takenSlots } from './holds.js'
+import { clientAddress, limited } from './limit.js'
 
-const times = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00']
-const formats = ['singles', 'doubles'] as const
 const sessionCookie = 'cct_session'
 const sessionMaxAge = 14 * 24 * 60 * 60
-
-type Format = (typeof formats)[number]
 
 type Enquiry = {
   id: string
@@ -31,14 +28,13 @@ type Enquiry = {
   email: string
   date: string
   time: string
-  format: Format
+  format: string
   note: string
   userId: string
   createdAt: string
 }
 
 const dataFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'enquiries.json')
-const hits = new Map<string, number[]>()
 
 const app = new Hono()
 
@@ -53,11 +49,9 @@ app.use(
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
-app.get('/api/court', (c) => c.json({ formats, times }))
-
 app.post('/api/auth/signup', async (c) => {
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'signup', 20)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
+  const ip = clientAddress(c.req.header('x-forwarded-for'))
+  if (await limited(ip, 'signup', 20)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
   const payload = await readJson(c)
   if (!payload) return c.json({ ok: false, error: 'Send that again.' }, 400)
   const result = await register(payload, 'client')
@@ -69,8 +63,8 @@ app.post('/api/auth/signup', async (c) => {
 })
 
 app.post('/api/auth/signin', async (c) => {
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'signin', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
+  const ip = clientAddress(c.req.header('x-forwarded-for'))
+  if (await limited(ip, 'signin', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
   const payload = await readJson(c)
   if (!payload) return c.json({ ok: false, error: 'Send that again.' }, 400)
   const result = await authenticate(payload)
@@ -92,7 +86,8 @@ app.post('/api/auth/signout', async (c) => {
 app.get('/api/auth/me', async (c) => {
   c.header('Cache-Control', 'no-store')
   const found = await openGate(c)
-  return c.json({ user: found?.user ?? null })
+  if (found && 'closed' in found) return c.json({ ok: false, error: 'The book is not open yet.' }, 503)
+  return c.json({ user: found && 'user' in found ? found.user : null })
 })
 
 app.get('/api/admin/accounts', async (c) => {
@@ -105,8 +100,8 @@ app.get('/api/admin/accounts', async (c) => {
 app.post('/api/admin/staff', async (c) => {
   const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'staff', 20)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
+  const ip = clientAddress(c.req.header('x-forwarded-for'))
+  if (await limited(ip, 'staff', 20)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
   const payload = await readJson(c)
   if (!payload) return c.json({ ok: false, error: 'Send that again.' }, 400)
   const result = await register(payload, 'admin')
@@ -118,8 +113,8 @@ app.post('/api/admin/staff', async (c) => {
 app.post('/api/holds', async (c) => {
   const gate = await requireUser(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'hold', 20)) return c.json({ ok: false, error: 'Too many requests. Wait a few minutes.' }, 429)
+  const ip = clientAddress(c.req.header('x-forwarded-for'))
+  if (await limited(ip, 'hold', 20)) return c.json({ ok: false, error: 'Too many requests. Wait a few minutes.' }, 429)
   const payload = await readJson(c)
   if (!payload) return c.json({ ok: false, error: 'Send that again.' }, 400)
   const result = await createHold(gate.user, payload)
@@ -143,8 +138,8 @@ app.get('/api/holds', async (c) => {
 app.get('/api/admin/passes/:code', async (c) => {
   const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'pass', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
+  const ip = clientAddress(c.req.header('x-forwarded-for'))
+  if (await limited(ip, 'pass', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
   c.header('Cache-Control', 'no-store')
   const found = await holdByPass(c.req.param('code'))
   if (!found) return c.json({ ok: false, error: 'That pass is not on the book.' }, 404)
@@ -157,58 +152,6 @@ app.get('/api/admin/holds', async (c) => {
   c.header('Cache-Control', 'no-store')
   const holds = (await allHolds()).map(({ pass: _pass, ...hold }) => hold)
   return c.json({ ok: true, holds })
-})
-
-app.post('/api/enquiries', async (c) => {
-  const gate = await requireUser(c)
-  if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
-  const ip = clientIp(c.req.header('x-forwarded-for'))
-  if (limited(ip, 'enquiry', 20)) {
-    return c.json({ ok: false, error: 'Too many requests. Wait a few minutes.' }, 429)
-  }
-
-  const payload = await readJson(c)
-  if (!payload) return c.json({ ok: false, error: 'Send that again.' }, 400)
-
-  if (typeof payload.company === 'string' && payload.company.trim() !== '') {
-    return c.json({ ok: true, id: 'held' }, 201)
-  }
-
-  const errors = validate(payload)
-  if (Object.keys(errors).length > 0) {
-    return c.json({ ok: false, errors }, 400)
-  }
-
-  const enquiry: Enquiry = {
-    id: crypto.randomUUID(),
-    name: String(payload.name).trim(),
-    email: String(payload.email).trim(),
-    date: String(payload.date),
-    time: String(payload.time),
-    format: payload.format as Format,
-    note: typeof payload.note === 'string' ? payload.note.trim().slice(0, 400) : '',
-    userId: gate.user.id,
-    createdAt: new Date().toISOString(),
-  }
-
-  if (!(await bookReady())) return c.json({ ok: false, error: 'The book is not open yet.' }, 503)
-  await rest('enquiries', {
-    method: 'POST',
-    headers: { prefer: 'return=minimal' },
-    body: JSON.stringify({
-      id: enquiry.id,
-      name: enquiry.name,
-      email: enquiry.email,
-      date: enquiry.date,
-      time: enquiry.time,
-      format: enquiry.format,
-      note: enquiry.note,
-      user_id: enquiry.userId,
-      created_at: enquiry.createdAt,
-    }),
-  })
-  console.log(`Court request ${enquiry.id} · ${enquiry.date} ${enquiry.time} ${enquiry.format}`)
-  return c.json({ ok: true, id: enquiry.id }, 201)
 })
 
 loadEnv()
@@ -237,16 +180,20 @@ function presentedSessions(c: RequestHead) {
 }
 
 async function openGate(c: RequestHead) {
+  let closed = false
   for (const id of presentedSessions(c)) {
-    const user = await userForSession(id)
-    if (user) return { id, user }
+    const look = await userForSession(id)
+    if (look.kind === 'user') return { id, user: look.user }
+    if (look.kind === 'closed') closed = true
   }
+  if (closed) return { closed: true as const }
   return null
 }
 
 async function requireUser(c: RequestHead) {
   const found = await openGate(c)
-  if (!found) return { ok: false as const, status: 401 as const, error: 'Sign in first.' }
+  if (found && 'closed' in found) return { ok: false as const, status: 503 as const, error: 'The book is not open yet.' }
+  if (!found || !('user' in found)) return { ok: false as const, status: 401 as const, error: 'Sign in first.' }
   return { ok: true as const, user: found.user }
 }
 
@@ -302,58 +249,6 @@ async function readJson(c: { req: { json: () => Promise<unknown> } }) {
   } catch {
     return null
   }
-}
-
-function validate(body: Record<string, unknown>) {
-  const errors: Record<string, string> = {}
-  const name = typeof body.name === 'string' ? body.name.trim() : ''
-  const email = typeof body.email === 'string' ? body.email.trim() : ''
-  const date = typeof body.date === 'string' ? body.date : ''
-  const time = typeof body.time === 'string' ? body.time : ''
-  const format = typeof body.format === 'string' ? body.format : ''
-  const note = typeof body.note === 'string' ? body.note.trim() : ''
-
-  if (name.length < 2 || name.length > 80) errors.name = 'Add your name.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 120) errors.email = 'Check the email.'
-  if (!validDay(date)) errors.date = 'Pick a day.'
-  if (!times.includes(time)) errors.time = 'Pick a time.'
-  if (!formats.includes(format as Format)) errors.format = 'Pick singles or doubles.'
-  if (note.length > 400) errors.note = 'Keep the note shorter.'
-  return errors
-}
-
-function validDay(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
-  if (!match) return false
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  const picked = new Date(year, month - 1, day)
-  if (picked.getFullYear() !== year || picked.getMonth() !== month - 1 || picked.getDate() !== day) {
-    return false
-  }
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const max = new Date(start)
-  max.setDate(max.getDate() + 60)
-  return picked >= start && picked <= max
-}
-
-function limited(ip: string, bucket: string, max: number) {
-  const now = Date.now()
-  const key = `${bucket}:${ip}`
-  const recent = (hits.get(key) ?? []).filter((stamp) => now - stamp < 10 * 60 * 1000)
-  if (recent.length >= max) {
-    hits.set(key, recent)
-    return true
-  }
-  recent.push(now)
-  hits.set(key, recent)
-  return false
-}
-
-function clientIp(header: string | undefined) {
-  return header?.split(',')[0]?.trim() || 'local'
 }
 
 async function adoptEnquiries() {
