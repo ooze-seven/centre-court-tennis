@@ -67,8 +67,11 @@ export function createHold(user: PublicUser, input: unknown) {
     if (!(await bookReady())) return { ok: false as const, error: 'The book is not open yet.' }
     await adoptHoldFile()
     const rows = await readHolds()
-    const same = rows.some((hold) => hold.userId === user.id && hold.date === parsed.date && hold.hour === parsed.hour)
-    if (same) return { ok: false as const, error: 'That hour is already in your request.' }
+    const sameHour = rows.filter((hold) => hold.date.slice(0, 10) === parsed.date && hold.hour === parsed.hour)
+    if (sameHour.some((hold) => hold.userId === user.id)) {
+      return { ok: false as const, error: 'That hour is already in your request.' }
+    }
+    if (sameHour.length > 0) return { ok: false as const, error: 'That hour is already held.' }
     const used = new Set(rows.map((hold) => hold.pass).filter((pass): pass is string => Boolean(pass)))
     const hold: StoredHold = {
       id: crypto.randomUUID(),
@@ -91,12 +94,21 @@ export function createHold(user: PublicUser, input: unknown) {
         body: JSON.stringify(toRow(hold)),
       })
     } catch (error) {
-      if (bookError(error)?.message.includes('holds_one_per_player')) {
+      const detail = bookError(error)?.message ?? ''
+      if (detail.includes('holds_one_hour')) return { ok: false as const, error: 'That hour is already held.' }
+      if (detail.includes('holds_one_per_player')) {
         return { ok: false as const, error: 'That hour is already in your request.' }
       }
       throw error
     }
     return { ok: true as const, hold: toPlayer(hold) }
+  })
+}
+
+export function takenSlots() {
+  return lock(async () => {
+    const rows = await rest<{ date: string; hour: number }[]>('holds?select=date,hour')
+    return rows.map((row) => ({ date: String(row.date).slice(0, 10), hour: row.hour }))
   })
 }
 

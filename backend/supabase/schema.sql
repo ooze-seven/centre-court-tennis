@@ -38,6 +38,8 @@ create table if not exists public.holds (
 
 create unique index if not exists holds_pass on public.holds (pass);
 
+create unique index if not exists holds_one_hour on public.holds (date, hour);
+
 create table if not exists public.enquiries (
   id uuid primary key,
   name text not null,

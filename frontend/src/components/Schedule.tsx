@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { useLenis } from 'lenis/react'
-import { requestHold, requestMyHolds, useAuth } from '../lib/auth.ts'
+import { requestHold, requestMyHolds, requestTaken, useAuth } from '../lib/auth.ts'
 import { withNext } from '../lib/gate.ts'
 import { prettyDate, toISO } from '../lib/days.ts'
 import {
@@ -74,8 +74,27 @@ export function Schedule() {
   }, [now])
 
   useEffect(() => {
+    let cancel = false
+    const load = () => {
+      requestTaken()
+        .then((slots) => {
+          if (cancel) return
+          const marked: Record<string, true> = {}
+          for (const slot of slots) marked[slotKey(slot.date, slot.hour)] = true
+          setHeld((current) => ({ ...current, ...marked }))
+        })
+        .catch(() => undefined)
+    }
+    load()
+    window.addEventListener('focus', load)
+    return () => {
+      cancel = true
+      window.removeEventListener('focus', load)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!user) {
-      setHeld({})
       setPasses({})
       setDone(null)
       return
@@ -155,14 +174,15 @@ export function Schedule() {
     try {
       const result = await requestHold({ date: picked.iso, hour: picked.hour, coach })
       if (!result.ok) {
-        setFormError(result.error)
-        if (result.error === 'That hour is already in your request.') {
+        if (result.error === 'That hour is already held.' || result.error === 'That hour is already in your request.') {
           const key = slotKey(picked.iso, picked.hour)
           setHeld((current) => ({ ...current, [key]: true }))
           const existing = passes[key]
           if (existing) setDone(existing)
           setPicked(null)
+          return
         }
+        setFormError(result.error)
         return
       }
       const saved = { iso: picked.iso, hour: picked.hour, coach, pass: result.hold.pass }
@@ -232,6 +252,7 @@ export function Schedule() {
               today={today}
               now={now}
               held={held}
+              passes={passes}
               picked={picked}
               onChoose={choose}
             />
@@ -337,6 +358,7 @@ function HourRow({
   today,
   now,
   held,
+  passes,
   picked,
   onChoose,
 }: {
@@ -345,6 +367,7 @@ function HourRow({
   today: string
   now: Date
   held: Record<string, true>
+  passes: Record<string, HeldRequest>
   picked: Slot | null
   onChoose: (slot: Slot) => void
 }) {
@@ -358,13 +381,16 @@ function HourRow({
         const key = slotKey(iso, hour)
         const shut = isPast(iso, hour, now)
         const taken = Boolean(held[key])
+        const mine = Boolean(passes[key])
         const selected = picked?.iso === iso && picked.hour === hour
         const day = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-        const label = taken
+        const label = mine
           ? `Show the pass, ${day}, ${hourRange(hour)}`
-          : shut
-            ? `Passed, ${day}, ${hourRange(hour)}`
-            : `Request ${day}, ${hourRange(hour)}, ${pesos(hour)} pesos`
+          : taken
+            ? `Held, ${day}, ${hourRange(hour)}`
+            : shut
+              ? `Passed, ${day}, ${hourRange(hour)}`
+              : `Request ${day}, ${hourRange(hour)}, ${pesos(hour)} pesos`
         return (
           <button
             key={key}
@@ -377,10 +403,14 @@ function HourRow({
             ]
               .filter(Boolean)
               .join(' ')}
-            disabled={shut && !taken}
+            disabled={shut && !mine}
+            aria-disabled={taken && !mine}
             aria-pressed={selected}
             aria-label={label}
-            onClick={() => onChoose({ iso, hour })}
+            onClick={() => {
+              if (taken && !mine) return
+              onChoose({ iso, hour })
+            }}
           >
             {taken ? (
               <>

@@ -1605,6 +1605,10 @@ html::-webkit-scrollbar-corner,
   background: var(--lime);
 }
 
+.slot--held[aria-disabled='true'] {
+  cursor: default;
+}
+
 .slot--held b {
   font-size: 0.68rem;
   letter-spacing: 0.02em;

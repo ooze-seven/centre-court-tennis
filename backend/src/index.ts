@@ -16,7 +16,7 @@ import {
 } from './accounts.js'
 import { bookReady, rest } from './db.js'
 import { loadEnv } from './env.js'
-import { allHolds, createHold, holdByPass, holdsFor } from './holds.js'
+import { allHolds, createHold, holdByPass, holdsFor, takenSlots } from './holds.js'
 
 const times = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00']
 const formats = ['singles', 'doubles'] as const
@@ -126,6 +126,11 @@ app.post('/api/holds', async (c) => {
   if (!result.ok) return c.json(result, 400)
   console.log(`Hour request ${result.hold.id} · ${gate.user.username} ${result.hold.date} ${result.hold.hour}`)
   return c.json(result, 201)
+})
+
+app.get('/api/court/taken', async (c) => {
+  c.header('Cache-Control', 'no-store')
+  return c.json({ ok: true, slots: await takenSlots() })
 })
 
 app.get('/api/holds', async (c) => {

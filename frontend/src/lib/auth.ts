@@ -134,6 +134,14 @@ export async function requestHold(input: { date: string; hour: number; coach: bo
   throw new Error('The gate did not answer. Try again.')
 }
 
+export async function requestTaken() {
+  const payload = await send('/api/court/taken')
+  if (!isRecord(payload) || payload.ok !== true || !Array.isArray(payload.slots) || !payload.slots.every(isTakenSlot)) {
+    throw new Error('The board did not open.')
+  }
+  return payload.slots
+}
+
 export async function requestMyHolds() {
   const payload = await send('/api/holds')
   if (!isRecord(payload) || payload.ok !== true || !Array.isArray(payload.holds) || !payload.holds.every(isCourtHold)) {
@@ -259,6 +267,10 @@ function isSessionUser(value: unknown): value is SessionUser {
     typeof value.email === 'string' &&
     (value.role === 'client' || value.role === 'admin')
   )
+}
+
+function isTakenSlot(value: unknown): value is { date: string; hour: number } {
+  return isRecord(value) && typeof value.date === 'string' && typeof value.hour === 'number'
 }
 
 function isCourtHold(value: unknown): value is CourtHold {
