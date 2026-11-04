@@ -47,6 +47,7 @@ app.use(
   cors({
     origin: (origin) => (allowedOrigins().includes(origin) ? origin : null),
     credentials: true,
+    allowHeaders: ['Content-Type', 'Authorization'],
   }),
 )
 
@@ -64,7 +65,7 @@ app.post('/api/auth/signup', async (c) => {
   const id = await openSession(result.user.id)
   writeSession(c, id)
   console.log(`Player joined · ${result.user.username}`)
-  return c.json({ ok: true, user: result.user }, 201)
+  return c.json({ ok: true, user: result.user, token: id }, 201)
 })
 
 app.post('/api/auth/signin', async (c) => {
@@ -79,31 +80,30 @@ app.post('/api/auth/signin', async (c) => {
   }
   const id = await openSession(result.user.id)
   writeSession(c, id)
-  return c.json(result)
+  return c.json({ ...result, token: id })
 })
 
 app.post('/api/auth/signout', async (c) => {
-  const id = readSession(c.req.header('cookie'))
-  if (id) await closeSession(id)
+  for (const id of presentedSessions(c)) await closeSession(id)
   writeSession(c, null)
   return c.json({ ok: true })
 })
 
 app.get('/api/auth/me', async (c) => {
   c.header('Cache-Control', 'no-store')
-  const user = await userForSession(readSession(c.req.header('cookie')))
-  return c.json({ user })
+  const found = await openGate(c)
+  return c.json({ user: found?.user ?? null })
 })
 
 app.get('/api/admin/accounts', async (c) => {
-  const gate = await demandDesk(c.req.header('cookie'))
+  const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   c.header('Cache-Control', 'no-store')
   return c.json({ ok: true, ...(await listAccounts()) })
 })
 
 app.post('/api/admin/staff', async (c) => {
-  const gate = await demandDesk(c.req.header('cookie'))
+  const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   const ip = clientIp(c.req.header('x-forwarded-for'))
   if (limited(ip, 'staff', 20)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
@@ -116,7 +116,7 @@ app.post('/api/admin/staff', async (c) => {
 })
 
 app.post('/api/holds', async (c) => {
-  const gate = await requireUser(c.req.header('cookie'))
+  const gate = await requireUser(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   const ip = clientIp(c.req.header('x-forwarded-for'))
   if (limited(ip, 'hold', 20)) return c.json({ ok: false, error: 'Too many requests. Wait a few minutes.' }, 429)
@@ -129,14 +129,14 @@ app.post('/api/holds', async (c) => {
 })
 
 app.get('/api/holds', async (c) => {
-  const gate = await requireUser(c.req.header('cookie'))
+  const gate = await requireUser(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   c.header('Cache-Control', 'no-store')
   return c.json({ ok: true, holds: await holdsFor(gate.user.id) })
 })
 
 app.get('/api/admin/passes/:code', async (c) => {
-  const gate = await demandDesk(c.req.header('cookie'))
+  const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   const ip = clientIp(c.req.header('x-forwarded-for'))
   if (limited(ip, 'pass', 40)) return c.json({ ok: false, error: 'Too many tries. Wait a few minutes.' }, 429)
@@ -147,7 +147,7 @@ app.get('/api/admin/passes/:code', async (c) => {
 })
 
 app.get('/api/admin/holds', async (c) => {
-  const gate = await demandDesk(c.req.header('cookie'))
+  const gate = await demandDesk(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   c.header('Cache-Control', 'no-store')
   const holds = (await allHolds()).map(({ pass: _pass, ...hold }) => hold)
@@ -155,7 +155,7 @@ app.get('/api/admin/holds', async (c) => {
 })
 
 app.post('/api/enquiries', async (c) => {
-  const gate = await requireUser(c.req.header('cookie'))
+  const gate = await requireUser(c)
   if (!gate.ok) return c.json({ ok: false, error: gate.error }, gate.status)
   const ip = clientIp(c.req.header('x-forwarded-for'))
   if (limited(ip, 'enquiry', 20)) {
@@ -218,14 +218,35 @@ serve({ fetch: app.fetch, port }, (info) => {
   console.log(`API http://localhost:${info.port}`)
 })
 
-async function requireUser(cookie: string | undefined) {
-  const user = await userForSession(readSession(cookie))
-  if (!user) return { ok: false as const, status: 401 as const, error: 'Sign in first.' }
-  return { ok: true as const, user }
+type RequestHead = { req: { header: (name: string) => string | undefined } }
+
+function bearerSession(header: string | undefined) {
+  if (!header) return null
+  const match = /^Bearer\s+([a-f0-9]{64})$/i.exec(header.trim())
+  return match ? match[1].toLowerCase() : null
 }
 
-async function demandDesk(cookie: string | undefined) {
-  const gate = await requireUser(cookie)
+function presentedSessions(c: RequestHead) {
+  const ids = [bearerSession(c.req.header('authorization')), readSession(c.req.header('cookie'))]
+  return [...new Set(ids.filter((id): id is string => Boolean(id && /^[a-f0-9]{64}$/.test(id))))]
+}
+
+async function openGate(c: RequestHead) {
+  for (const id of presentedSessions(c)) {
+    const user = await userForSession(id)
+    if (user) return { id, user }
+  }
+  return null
+}
+
+async function requireUser(c: RequestHead) {
+  const found = await openGate(c)
+  if (!found) return { ok: false as const, status: 401 as const, error: 'Sign in first.' }
+  return { ok: true as const, user: found.user }
+}
+
+async function demandDesk(c: RequestHead) {
+  const gate = await requireUser(c)
   if (!gate.ok) return gate
   if (gate.user.role !== 'admin') return { ok: false as const, status: 403 as const, error: 'This gate is for the desk.' }
   return gate
