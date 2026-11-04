@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PublicUser } from './accounts.js'
+import { courtDayIndex, courtInstant, courtParts, isRealDay } from './court-time.js'
 import { bookError, bookReady, rest } from './db.js'
 
 const passAlphabet = 'abcdefghjkmnpqrstuvwxyz23456789'
@@ -67,11 +68,8 @@ export function createHold(user: PublicUser, input: unknown) {
     if (!(await bookReady())) return { ok: false as const, error: 'The book is not open yet.' }
     await adoptHoldFile()
     const rows = await readHolds()
-    const sameHour = rows.filter((hold) => hold.date.slice(0, 10) === parsed.date && hold.hour === parsed.hour)
-    if (sameHour.some((hold) => hold.userId === user.id)) {
-      return { ok: false as const, error: 'That hour is already in your request.' }
-    }
-    if (sameHour.length > 0) return { ok: false as const, error: 'That hour is already held.' }
+    const block = holdBlock(rows, user.id, parsed.date, parsed.hour)
+    if (block) return { ok: false as const, error: block }
     const used = new Set(rows.map((hold) => hold.pass).filter((pass): pass is string => Boolean(pass)))
     const hold: StoredHold = {
       id: crypto.randomUUID(),
@@ -138,7 +136,7 @@ export function holdByPass(code: string) {
     const hold = rows[0] ? fromRow(rows[0]) : null
     if (!hold?.pass) return null
     return {
-      gate: passGate(hold),
+      gate: judgePass(hold.date, hold.hour),
       firstName: hold.firstName,
       lastName: hold.lastName,
       username: hold.username,
@@ -155,31 +153,44 @@ function parseHold(input: unknown): { ok: true; date: string; hour: number; coac
   const date = typeof input.date === 'string' ? input.date : ''
   const hour = input.hour
   const coach = input.coach
-  if (!openDay(date)) return { ok: false, error: 'Pick a day on the board.' }
+  if (!dayOnBoard(date)) return { ok: false, error: 'Pick a day on the board.' }
   if (typeof hour !== 'number' || !Number.isInteger(hour) || hour < 0 || hour > 23) {
     return { ok: false, error: 'Pick an hour on the board.' }
   }
   if (typeof coach !== 'boolean') return { ok: false, error: 'Say if you need a coach.' }
-  const [year, month, day] = date.split('-').map(Number)
-  if (new Date(year, month - 1, day, hour).getTime() <= Date.now()) {
-    return { ok: false, error: 'That hour has passed.' }
-  }
+  if (hourHasPassed(date, hour)) return { ok: false, error: 'That hour has passed.' }
   return { ok: true, date, hour, coach }
 }
 
-function openDay(value: string) {
+export function hourHasPassed(date: string, hour: number, now = Date.now()) {
+  const start = courtInstant(date.slice(0, 10), hour)
+  return Number.isFinite(start) && start <= now
+}
+
+export function dayOnBoard(value: string, now = new Date()) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return false
   const year = Number(match[1])
   const month = Number(match[2])
   const day = Number(match[3])
-  const picked = new Date(year, month - 1, day)
-  if (picked.getFullYear() !== year || picked.getMonth() !== month - 1 || picked.getDate() !== day) return false
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const max = new Date(start)
-  max.setDate(max.getDate() + 60)
-  return picked >= start && picked <= max
+  if (!isRealDay(year, month, day)) return false
+  const today = courtParts(now)
+  const start = courtDayIndex(today.year, today.month, today.day)
+  const picked = courtDayIndex(year, month, day)
+  return picked >= start && picked <= start + 60
+}
+
+export function holdBlock(
+  rows: { userId: string; date: string; hour: number }[],
+  userId: string,
+  date: string,
+  hour: number,
+) {
+  const day = date.slice(0, 10)
+  const same = rows.filter((hold) => hold.date.slice(0, 10) === day && hold.hour === hour)
+  if (same.some((hold) => hold.userId === userId)) return 'That hour is already in your request.'
+  if (same.length > 0) return 'That hour is already held.'
+  return null
 }
 
 function toPlayer(hold: StoredHold): PlayerHold {
@@ -260,12 +271,10 @@ function isPass(value: string) {
   return new RegExp(`^[${passAlphabet}]{10}$`).test(value)
 }
 
-function passGate(hold: StoredHold): PassGate {
-  const [year, month, day] = hold.date.split('-').map(Number)
-  const start = new Date(year, month - 1, day, hold.hour).getTime()
-  const now = Date.now()
+export function judgePass(date: string, hour: number, now = Date.now()): PassGate {
+  const start = courtInstant(date.slice(0, 10), hour)
+  if (!Number.isFinite(start) || now >= start + 60 * 60 * 1000) return 'late'
   if (now < start - 10 * 60 * 1000) return 'early'
-  if (now >= start + 60 * 60 * 1000) return 'late'
   return 'now'
 }
 
