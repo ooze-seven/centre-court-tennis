@@ -6,12 +6,18 @@ import {
   requestSignIn,
   requestSignOut,
   requestSignUp,
+  watchGate,
+  whenGateRejects,
   type SessionUser,
 } from '../lib/auth.ts'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [ready, setReady] = useState(false)
+
+  useEffect(() => whenGateRejects(() => setUser(null)), [])
+
+  useEffect(() => watchGate(() => setUser(null)), [])
 
   useEffect(() => {
     let cancel = false
@@ -43,8 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    await requestSignOut()
-    setUser(null)
+    try {
+      await requestSignOut()
+    } finally {
+      setUser(null)
+    }
   }, [])
 
   const value = useMemo(

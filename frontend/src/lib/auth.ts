@@ -42,6 +42,21 @@ export async function requestSession() {
   return payload.user
 }
 
+export function watchGate(onClear: () => void) {
+  function onStorage(event: StorageEvent) {
+    if (event.key === gateKey && !event.newValue) onClear()
+  }
+  window.addEventListener('storage', onStorage)
+  return () => window.removeEventListener('storage', onStorage)
+}
+
+export function whenGateRejects(onReject: () => void) {
+  onRejected = onReject
+  return () => {
+    if (onRejected === onReject) onRejected = null
+  }
+}
+
 export async function requestSignIn(username: string, password: string) {
   return readAuth(await send('/api/auth/signin', { username, password }))
 }
@@ -51,8 +66,12 @@ export async function requestSignUp(draft: AccountDraft) {
 }
 
 export async function requestSignOut() {
-  const payload = await send('/api/auth/signout', {})
-  if (!isRecord(payload) || payload.ok !== true) throw new Error('The gate did not answer. Try again.')
+  try {
+    const payload = await send('/api/auth/signout', {})
+    if (!isRecord(payload) || payload.ok !== true) throw new Error('The gate did not answer. Try again.')
+  } finally {
+    forgetGate()
+  }
 }
 
 export async function requestStaff(draft: AccountDraft) {
@@ -152,22 +171,60 @@ export async function requestBook() {
   return { players: payload.players, staff: payload.staff }
 }
 
+const gateKey = 'cct_session'
+
+let onRejected: (() => void) | null = null
+
 function apiUrl(path: string) {
   const base = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? ''
   return `${base}${path}`
 }
 
+function gateToken() {
+  try {
+    const value = localStorage.getItem(gateKey)
+    return value && /^[a-f0-9]{64}$/.test(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function rememberGate(token: string) {
+  if (!/^[a-f0-9]{64}$/.test(token)) return
+  try {
+    localStorage.setItem(gateKey, token)
+  } catch {
+    // A private window can refuse storage. The cookie still covers a same-site gate.
+  }
+}
+
+function forgetGate() {
+  try {
+    localStorage.removeItem(gateKey)
+  } catch {
+    // The stored key is already unreachable.
+  }
+}
+
 async function send(path: string, body?: unknown) {
+  const headers = new Headers()
+  const token = gateToken()
+  if (token) headers.set('authorization', `Bearer ${token}`)
+  if (body !== undefined) headers.set('content-type', 'application/json')
   let response: Response
   try {
     response = await fetch(apiUrl(path), {
       method: body === undefined ? 'GET' : 'POST',
       credentials: 'include',
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
     throw new Error('The gate did not answer. Try again.')
+  }
+  if (response.status === 401 && path !== '/api/auth/signin') {
+    forgetGate()
+    onRejected?.()
   }
   try {
     return (await response.json()) as unknown
@@ -177,7 +234,10 @@ async function send(path: string, body?: unknown) {
 }
 
 function readAuth(payload: unknown): AuthResult {
-  if (isRecord(payload) && payload.ok === true && isSessionUser(payload.user)) return { ok: true, user: payload.user }
+  if (isRecord(payload) && payload.ok === true && isSessionUser(payload.user)) {
+    if (typeof payload.token === 'string') rememberGate(payload.token)
+    return { ok: true, user: payload.user }
+  }
   if (isRecord(payload) && payload.ok === false) {
     return {
       ok: false,
