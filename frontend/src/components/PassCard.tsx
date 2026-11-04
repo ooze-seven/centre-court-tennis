@@ -92,27 +92,20 @@ export function PassCard({
           {src ? <img src={src} alt="" width={280} height={280} /> : null}
           <figcaption className="pass-card__code">{pass}</figcaption>
         </figure>
-        <dl className="pass-card__facts">
-          <div>
-            <dt>Day</dt>
-            <dd>{prettyDate(iso)}</dd>
-          </div>
-          <div>
-            <dt>Hour</dt>
-            <dd>{hourRange(hour)}</dd>
-          </div>
-          <div>
-            <dt>Rate</dt>
-            <dd>
-              {rateName(hour)} · {pesos(hour)} pesos{coach ? ' · Coach' : ''}
-            </dd>
-          </div>
-        </dl>
-        <p className="dek">The desk will confirm before anyone walks on. Arrive 10 minutes early.</p>
-        <button className="btn btn--lime" type="button" onClick={() => close.current()}>
-          Hold another hour
-          <Arrow />
-        </button>
+        <div className="pass-card__when">
+          <p>{prettyDate(iso)}</p>
+          <p className="pass-card__hour">{hourRange(hour)}</p>
+          <p>
+            {rateName(hour)} · {pesos(hour)} pesos{coach ? ' · Coach' : ''}
+          </p>
+        </div>
+        <div className="pass-card__foot">
+          <p>The desk will confirm before anyone walks on. Arrive 10 minutes early.</p>
+          <button className="btn btn--lime" type="button" onClick={() => close.current()}>
+            Hold another hour
+            <Arrow />
+          </button>
+        </div>
       </div>
     </dialog>
   )
