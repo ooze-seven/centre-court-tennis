@@ -1601,8 +1601,10 @@ html::-webkit-scrollbar-corner,
   outline-offset: -2px;
 }
 
-.slot--held {
+.slot--held,
+.slot.is-today.slot--held {
   background: var(--lime);
+  color: var(--ink);
 }
 
 .slot--held[aria-disabled='true'] {
@@ -1610,14 +1612,11 @@ html::-webkit-scrollbar-corner,
 }
 
 .slot--held b {
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
-  font-weight: 650;
-}
-
-.slot--held small {
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
   text-transform: uppercase;
 }
 

@@ -412,16 +412,7 @@ function HourRow({
               onChoose({ iso, hour })
             }}
           >
-            {taken ? (
-              <>
-                <b>
-                  {hour}–{hour === 23 ? 24 : hour + 1}
-                </b>
-                <small>Held</small>
-              </>
-            ) : shut ? null : (
-              <span className="slot__plus" />
-            )}
+            {taken ? <b>Held</b> : shut ? null : <span className="slot__plus" />}
           </button>
         )
       })}
