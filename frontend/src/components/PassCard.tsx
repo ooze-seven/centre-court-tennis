@@ -85,15 +85,12 @@ export function PassCard({
             <p className="pass-card__brand">Centrecourt</p>
           </div>
         </header>
-        <h2 id={titleId} tabIndex={-1} autoFocus>
-          {name}
-        </h2>
         <figure className="pass-card__qr">
+          <h2 id={titleId} tabIndex={-1} autoFocus>
+            {name}
+          </h2>
           {src ? <img src={src} alt="" width={280} height={280} /> : null}
-          <figcaption>
-            Show this at the court. The desk scans it against the book.
-            <span className="pass-card__code">{pass}</span>
-          </figcaption>
+          <figcaption className="pass-card__code">{pass}</figcaption>
         </figure>
         <dl className="pass-card__facts">
           <div>
