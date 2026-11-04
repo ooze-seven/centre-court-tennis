@@ -3,9 +3,11 @@ import { Link } from 'react-router'
 import { useLenis } from 'lenis/react'
 import { requestHold, requestMyHolds, requestTaken, useAuth } from '../lib/auth.ts'
 import { withNext } from '../lib/gate.ts'
+import { courtWall } from '../lib/court-time.ts'
 import { prettyDate, toISO } from '../lib/days.ts'
 import {
   addWeeks,
+  clockDelay,
   hourLabel,
   hourRange,
   hours,
@@ -15,6 +17,7 @@ import {
   sameDay,
   slotKey,
   startOfWeek,
+  takenBoard,
   weekDates,
   weekLabel,
 } from '../lib/schedule.ts'
@@ -28,12 +31,16 @@ type HeldRequest = Slot & { coach: boolean; pass: string }
 type Errors = Partial<Record<'name' | 'mobile', string>>
 
 export function Schedule() {
-  const now = useRef(new Date()).current
-  const today = toISO(now)
-  const thisWeek = startOfWeek(now)
+  const [now, setNow] = useState(() => new Date())
+  const scrollHour = useRef(courtWall(now).getHours())
+  const wall = courtWall(now)
+  const today = toISO(wall)
+  const thisWeek = startOfWeek(wall)
   const [week, setWeek] = useState(thisWeek)
   const [picked, setPicked] = useState<Slot | null>(null)
   const [held, setHeld] = useState<Record<string, true>>({})
+  const [known, setKnown] = useState(false)
+  const [boardError, setBoardError] = useState('')
   const [passes, setPasses] = useState<Record<string, HeldRequest>>({})
   const [done, setDone] = useState<HeldRequest | null>(null)
   const [name, setName] = useState('')
@@ -67,11 +74,29 @@ export function Schedule() {
         raf = window.requestAnimationFrame(align)
         return
       }
-      node.scrollTop = (now.getHours() / 24) * max
+      node.scrollTop = (scrollHour.current / 24) * max
     }
     align()
     return () => window.cancelAnimationFrame(raf)
-  }, [now])
+  }, [])
+
+  useEffect(() => {
+    let timer = 0
+    const tick = () => {
+      const next = new Date()
+      setNow(next)
+      timer = window.setTimeout(tick, clockDelay(next.getTime()))
+    }
+    timer = window.setTimeout(tick, clockDelay(Date.now()))
+    const onFocus = () => setNow(new Date())
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
+  const activePick = picked && isPast(picked.iso, picked.hour, now) ? null : picked
 
   useEffect(() => {
     let cancel = false
@@ -79,11 +104,15 @@ export function Schedule() {
       requestTaken()
         .then((slots) => {
           if (cancel) return
-          const marked: Record<string, true> = {}
-          for (const slot of slots) marked[slotKey(slot.date, slot.hour)] = true
-          setHeld((current) => ({ ...current, ...marked }))
+          setHeld((current) => takenBoard({ held: current, known: true }, { ok: true, slots }).held)
+          setKnown(true)
+          setBoardError('')
         })
-        .catch(() => undefined)
+        .catch((caught) => {
+          if (cancel) return
+          const error = caught instanceof Error ? caught.message : 'The board did not open.'
+          setBoardError(takenBoard({ held: {}, known: false }, { ok: false, error }).error)
+        })
     }
     load()
     window.addEventListener('focus', load)
@@ -128,7 +157,7 @@ export function Schedule() {
   }, [user])
 
   useEffect(() => {
-    if (!picked || !ready) return
+    if (!activePick || !ready) return
     const node = panelRef.current
     if (!node) return
     const top = node.getBoundingClientRect().top
@@ -138,7 +167,7 @@ export function Schedule() {
       return
     }
     window.scrollBy({ top: top - 108, behavior: 'smooth' })
-  }, [picked, lenis, ready, user])
+  }, [activePick, lenis, ready, user])
 
   function choose(slot: Slot) {
     const key = slotKey(slot.iso, slot.hour)
@@ -150,7 +179,7 @@ export function Schedule() {
       setFormError('')
       return
     }
-    if (held[key]) return
+    if (held[key] || (!known && boardError)) return
     setPicked(slot)
     setDone(null)
     setErrors({})
@@ -159,7 +188,7 @@ export function Schedule() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!picked || !user || busy) return
+    if (!activePick || !user || busy) return
     const next: Errors = {}
     if (name.trim().length < 2) next.name = 'Add your name.'
     const digits = mobile.replace(/\D/g, '')
@@ -172,10 +201,10 @@ export function Schedule() {
     }
     setBusy(true)
     try {
-      const result = await requestHold({ date: picked.iso, hour: picked.hour, coach })
+      const result = await requestHold({ date: activePick.iso, hour: activePick.hour, coach })
       if (!result.ok) {
         if (result.error === 'That hour is already held.' || result.error === 'That hour is already in your request.') {
-          const key = slotKey(picked.iso, picked.hour)
+          const key = slotKey(activePick.iso, activePick.hour)
           setHeld((current) => ({ ...current, [key]: true }))
           const existing = passes[key]
           if (existing) setDone(existing)
@@ -185,9 +214,9 @@ export function Schedule() {
         setFormError(result.error)
         return
       }
-      const saved = { iso: picked.iso, hour: picked.hour, coach, pass: result.hold.pass }
-      setHeld((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: true }))
-      setPasses((current) => ({ ...current, [slotKey(picked.iso, picked.hour)]: saved }))
+      const saved = { iso: activePick.iso, hour: activePick.hour, coach, pass: result.hold.pass }
+      setHeld((current) => ({ ...current, [slotKey(activePick.iso, activePick.hour)]: true }))
+      setPasses((current) => ({ ...current, [slotKey(activePick.iso, activePick.hour)]: saved }))
       setDone(saved)
       setPicked(null)
       setName(`${user.firstName} ${user.lastName}`)
@@ -232,6 +261,11 @@ export function Schedule() {
           <i className="board__swatch board__swatch--shut" /> Passed
         </li>
       </ul>
+      {boardError ? (
+        <p className="form__alert" role="alert">
+          {boardError}
+        </p>
+      ) : null}
       <div className="board__scroll" ref={scrollRef} data-lenis-prevent tabIndex={0}>
         <div className="board__grid">
           <div className="board__corner" />
@@ -251,9 +285,10 @@ export function Schedule() {
               days={days}
               today={today}
               now={now}
+              blocked={Boolean(boardError) && !known}
               held={held}
               passes={passes}
-              picked={picked}
+              picked={activePick}
               onChoose={choose}
             />
           ))}
@@ -269,12 +304,12 @@ export function Schedule() {
           onClose={() => setDone(null)}
         />
       ) : null}
-      {picked && user ? (
+      {activePick && user ? (
         <form ref={setPanel} className="form board__request" noValidate onSubmit={onSubmit}>
-          <p className="eyebrow">{prettyDate(picked.iso)}</p>
-          <h3>{hourRange(picked.hour)}</h3>
+          <p className="eyebrow">{prettyDate(activePick.iso)}</p>
+          <h3>{hourRange(activePick.hour)}</h3>
           <p className="dek">
-            {rateName(picked.hour)} · {pesos(picked.hour)} pesos an hour
+            {rateName(activePick.hour)} · {pesos(activePick.hour)} pesos an hour
           </p>
           <p className="dek">The desk holds this under the name on your gate.</p>
           <div className="field-row">
@@ -329,12 +364,12 @@ export function Schedule() {
           </button>
         </form>
       ) : null}
-      {picked && ready && !user ? (
+      {activePick && ready && !user ? (
         <div className="board__request" ref={setPanel} aria-live="polite">
-          <p className="eyebrow">{prettyDate(picked.iso)}</p>
-          <h3>{hourRange(picked.hour)}</h3>
+          <p className="eyebrow">{prettyDate(activePick.iso)}</p>
+          <h3>{hourRange(activePick.hour)}</h3>
           <p className="dek">
-            {rateName(picked.hour)} · {pesos(picked.hour)} pesos an hour
+            {rateName(activePick.hour)} · {pesos(activePick.hour)} pesos an hour
           </p>
           <p className="dek">Sign in with your player name before the desk can hold this hour.</p>
           <div className="gate__actions">
@@ -357,6 +392,7 @@ function HourRow({
   days,
   today,
   now,
+  blocked,
   held,
   passes,
   picked,
@@ -366,6 +402,7 @@ function HourRow({
   days: Date[]
   today: string
   now: Date
+  blocked: boolean
   held: Record<string, true>
   passes: Record<string, HeldRequest>
   picked: Slot | null
@@ -382,37 +419,40 @@ function HourRow({
         const shut = isPast(iso, hour, now)
         const taken = Boolean(held[key])
         const mine = Boolean(passes[key])
+        const waiting = blocked && !taken && !mine && !shut
         const selected = picked?.iso === iso && picked.hour === hour
         const day = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
         const label = mine
           ? `Show the pass, ${day}, ${hourRange(hour)}`
-          : taken
-            ? `Held, ${day}, ${hourRange(hour)}`
-            : shut
-              ? `Passed, ${day}, ${hourRange(hour)}`
-              : `Request ${day}, ${hourRange(hour)}, ${pesos(hour)} pesos`
+          : waiting
+            ? `The board did not open, ${day}, ${hourRange(hour)}`
+            : taken
+              ? `Held, ${day}, ${hourRange(hour)}`
+              : shut
+                ? `Passed, ${day}, ${hourRange(hour)}`
+                : `Request ${day}, ${hourRange(hour)}, ${pesos(hour)} pesos`
         return (
           <button
             key={key}
             type="button"
             className={[
               'slot',
-              taken ? 'slot--held' : shut ? 'slot--shut' : 'slot--open',
+              taken ? 'slot--held' : waiting ? 'slot--wait' : shut ? 'slot--shut' : 'slot--open',
               sameDay(date, today) ? 'is-today' : '',
               selected ? 'is-picked' : '',
             ]
               .filter(Boolean)
               .join(' ')}
-            disabled={shut && !mine}
-            aria-disabled={taken && !mine}
+            disabled={(shut && !mine) || waiting}
+            aria-disabled={(taken && !mine) || waiting}
             aria-pressed={selected}
             aria-label={label}
             onClick={() => {
-              if (taken && !mine) return
+              if ((taken && !mine) || waiting) return
               onChoose({ iso, hour })
             }}
           >
-            {taken ? <b>Held</b> : shut ? null : <span className="slot__plus" />}
+            {taken ? <b>Held</b> : shut || waiting ? null : <span className="slot__plus" />}
           </button>
         )
       })}

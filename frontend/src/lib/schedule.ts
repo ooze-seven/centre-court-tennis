@@ -1,3 +1,4 @@
+import { courtInstant } from './court-time.ts'
 import { toISO } from './days.ts'
 
 export const DAY_START = 6
@@ -47,8 +48,23 @@ export function hourRange(hour: number) {
 }
 
 export function isPast(iso: string, hour: number, now: Date) {
-  const [year, month, day] = iso.split('-').map(Number)
-  return new Date(year, month - 1, day, hour).getTime() <= now.getTime()
+  const start = courtInstant(iso, hour)
+  return Number.isFinite(start) && start <= now.getTime()
+}
+
+export function clockDelay(now: number) {
+  const rest = 60_000 - (now % 60_000)
+  return rest === 0 ? 60_000 : rest
+}
+
+export function takenBoard(
+  state: { held: Record<string, true>; known: boolean },
+  result: { ok: true; slots: { date: string; hour: number }[] } | { ok: false; error: string },
+) {
+  if (!result.ok) return { held: state.held, known: state.known, error: result.error }
+  const held = { ...state.held }
+  for (const slot of result.slots) held[slotKey(slot.date, slot.hour)] = true
+  return { held, known: true, error: '' }
 }
 
 export function weekLabel(days: Date[]) {

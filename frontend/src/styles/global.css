@@ -1620,7 +1620,9 @@ html::-webkit-scrollbar-corner,
   text-transform: uppercase;
 }
 
-.slot--shut {
+.slot--shut,
+.slot--wait,
+.slot.is-today.slot--wait {
   background: rgba(246, 247, 242, 0.04);
   cursor: default;
 }

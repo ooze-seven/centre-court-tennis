@@ -1,9 +1,11 @@
-export function todayISO() {
-  return toISO(new Date())
+import { courtWall } from './court-time.ts'
+
+export function todayISO(now = new Date()) {
+  return toISO(courtWall(now))
 }
 
-export function addDaysISO(days: number) {
-  const date = new Date()
+export function addDaysISO(days: number, now = new Date()) {
+  const date = courtWall(now)
   date.setDate(date.getDate() + days)
   return toISO(date)
 }
