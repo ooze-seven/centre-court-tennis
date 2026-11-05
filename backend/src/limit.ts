@@ -27,15 +27,19 @@ export async function allowHit(store: HitStore, ip: string, bucket: string, max:
 
 const memory = new Map<string, number[]>()
 
-const memoryStore: HitStore = {
+export function memoryHitCount(bucket: string, ip: string) {
+  return memory.get(`${bucket}:${ip}`)?.length ?? 0
+}
+
+export const memoryStore: HitStore = {
   async read(bucket, ip, since) {
     return (memory.get(`${bucket}:${ip}`) ?? []).filter((stamp) => stamp >= since)
   },
   async add(bucket, ip, at) {
     const key = `${bucket}:${ip}`
-    const stamps = memory.get(key) ?? []
-    stamps.push(at)
-    memory.set(key, stamps)
+    const recent = (memory.get(key) ?? []).filter((stamp) => at - stamp < limitWindowMs)
+    recent.push(at)
+    memory.set(key, recent)
   },
 }
 
